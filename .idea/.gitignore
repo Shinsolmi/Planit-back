@@ -8,4 +8,7 @@
 # Datasource local storage ignored files
 /dataSources/
 /dataSources.local.xml
+<<<<<<< HEAD
 .env
+=======
+>>>>>>> 9dab7d0 (Initial commit - PLANit server)

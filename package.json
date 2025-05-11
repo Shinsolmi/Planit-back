@@ -1,9 +1,6 @@
 {
-
   "name": "untitled",
-
   "version": "1.0.0",
-
   "main": "index.js",
 
   "scripts": {
@@ -15,28 +12,17 @@
   },
 
   "keywords": [],
-
   "author": "",
-
   "license": "ISC",
-
   "description": "",
-
   "dependencies": {
-
     "cors": "^2.8.5",
-
     "dotenv": "^16.5.0",
-
     "express": "^5.1.0",
 
     "jsonwebtoken": "^9.0.2",
 
     "localtunnel": "^2.0.2",
-
     "mysql2": "^3.14.1"
-
   }
-
 }
-

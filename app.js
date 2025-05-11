@@ -34,7 +34,7 @@ app.get('/map', (req, res) => {
         </html>
     `);
 });
-
+app.use('/users', userRoutes);
 // 예: 임시 스케줄 데이터 (DB에서 가져올 수도 있음)
 const schedules = [
     { title: '회의실 A', lat: 37.5665, lng: 126.9780, description: '오전 회의' },
@@ -45,7 +45,6 @@ app.get('/schedules/map', (req, res) => {
 });
 
 // 기존 라우트
-app.use('/users', userRoutes);
 app.use('/schedules', schedulesRouter);
 app.use('/ai', aiRoutes);
 
@@ -57,3 +56,4 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`);
 });
+
