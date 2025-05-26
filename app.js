@@ -1,7 +1,10 @@
 const express = require('express');
 const cors = require('cors');
+require('dotenv').config();
+
 const userRoutes = require('./routes/users');
 const schedulesRouter = require('./routes/schedules');
+const aiRoutes = require('./routes/ai');
 const path = require('path');
 
 const app = express();
@@ -15,13 +18,11 @@ app.get('/map', (req, res) => {
 // 기존 라우트
 app.use('/users', userRoutes);
 app.use('/schedules', schedulesRouter);
+app.use('/ai', aiRoutes);
 
 // '/map' 경로로 Google Maps 화면을 표시할 HTML 파일 제공
 app.get('/map', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));  // public/index.html 파일 제공
-});
-app.get('/chat', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'chatgpt.html'));
 });
 
 // 기본 루트 경로
