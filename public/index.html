@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Google Maps Example</title>
+    <script>
+        // Google Maps API 키를 하드코딩
+        const apiKey = '';  // 실제 API 키로 바꿔주세요
+
+        // Google Maps API 로드
+        function loadGoogleMaps() {
+            const script = document.createElement('script');
+            script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&callback=initMap`;
+            script.async = true;
+            script.defer = true;
+            document.head.appendChild(script);
+        }
+
+        loadGoogleMaps();  // 지도 API 로드 함수 호출
+
+        // 지도 초기화 함수
+        function initMap() {
+            const location = { lat: 37.5665, lng: 126.9780 };  // 서울의 위치
+
+            const map = new google.maps.Map(document.getElementById("map"), {
+                zoom: 10,
+                center: location
+            });
+
+            new google.maps.Marker({
+                position: location,
+                map: map
+            });
+        }
+    </script>
+    <style>
+        #map {
+            height: 100vh;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+<div id="map"></div>
+</body>
+</html>

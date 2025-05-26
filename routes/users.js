@@ -1,6 +1,16 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
+const usersController = require('../controllers/usersController');
+const auth = require('../middleware/authMiddleware');
+
+
+router.post('/register', usersController.register); // 회원가입
+router.post('/login', usersController.login);
+router.get('/me', auth, usersController.getMyPage);
+router.get('/me/saved-restaurants', auth, usersController.getSavedRestaurants);
+router.get('/me/saved-tips', auth, usersController.getSavedTips);
+
 
 // 사용자 전체 조회
 router.get('/', async (req, res) => {
