@@ -9,6 +9,10 @@
 /dataSources/
 /dataSources.local.xml
 <<<<<<< HEAD
+<<<<<<< HEAD
 .env
 =======
 >>>>>>> 9dab7d0 (Initial commit - PLANit server)
+=======
+.env
+>>>>>>> 3c81fba (fix: remove .env)

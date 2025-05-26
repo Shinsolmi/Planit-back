@@ -7,11 +7,19 @@ const userRoutes = require('./routes/users');
 const schedulesRouter = require('./routes/schedules');
 const aiRoutes = require('./routes/ai');
 const path = require('path');
+const communityRouter = require('./routes/community');
+const tipsRouter = require('./routes/tips');
+const mainRouter = require('./routes/main');
 
 const app = express();
 app.use(cors());  // 모든 도메인 허용
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+
+app.use('/community', communityRouter);
+app.use('/tips', tipsRouter);
+app.use('/main', mainRouter);
+
 // 정적 파일을 제공하는 설정 (HTML 파일 포함)
 app.get('/map', (req, res) => {
     const apiKey = process.env.GOOGLE_MAPS_API_KEY;
@@ -34,7 +42,7 @@ app.get('/map', (req, res) => {
         </html>
     `);
 });
-app.use('/users', userRoutes);
+
 // 예: 임시 스케줄 데이터 (DB에서 가져올 수도 있음)
 const schedules = [
     { title: '회의실 A', lat: 37.5665, lng: 126.9780, description: '오전 회의' },
@@ -45,6 +53,7 @@ app.get('/schedules/map', (req, res) => {
 });
 
 // 기존 라우트
+app.use('/users', userRoutes);
 app.use('/schedules', schedulesRouter);
 app.use('/ai', aiRoutes);
 
