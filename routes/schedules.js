@@ -13,9 +13,4 @@ router.delete('/details/:detail_id', controller.deleteScheduleDetail);
 router.delete('/:id', controller.deleteSchedule);
 router.put('/:id/full', controller.updateScheduleWithDetails);
 
-<<<<<<< HEAD
-
-
-=======
->>>>>>> 3c81fba (fix: remove .env)
 module.exports = router;
