@@ -1,25 +1,59 @@
 const express = require('express');
 const axios = require('axios');
-require('dotenv').config();
-
 const router = express.Router();
 
-router.post('/generate-plan', async (req, res) => {
-  const { city, duration, companions, style, pace } = req.body;
+const selections = {};
+const TEMP_USER_ID = 'temp_user';
 
-const companionsText = companions.join(', ');
-const styleText = style.join(', ');
+// 개별 저장 라우트
+router.post('/save-city', (req, res) => {
+  const { city } = req.body;
+  selections[TEMP_USER_ID] = { ...selections[TEMP_USER_ID], city };
+  res.json({ message: '도시 저장 완료' });
+});
 
-const prompt = `
-너는 여행 플래너야. 아래 조건에 맞는 ${duration}일간의 ${city} 여행 일정을 JSON 형식으로 작성해줘.
+router.post('/save-duration', (req, res) => {
+  const { duration } = req.body;
+  selections[TEMP_USER_ID] = { ...selections[TEMP_USER_ID], duration };
+  res.json({ message: '숙박일 수 저장 완료' });
+});
 
-- 여행지: ${city}
-- 여행 기간: ${duration}일
-- 누구와 함께: ${companionsText}
-- 선호하는 여행 스타일: ${styleText}
-- 일정 밀도: ${pace}
+router.post('/save-companion', (req, res) => {
+  const { companion } = req.body;
+  selections[TEMP_USER_ID] = { ...selections[TEMP_USER_ID], companion };
+  res.json({ message: '동행자 저장 완료' });
+});
 
-결과는 다음 JSON 형식으로 줘:
+router.post('/save-theme', (req, res) => {
+  const { theme } = req.body;
+  selections[TEMP_USER_ID] = { ...selections[TEMP_USER_ID], theme };
+  res.json({ message: '테마 저장 완료' });
+});
+
+router.post('/save-pace', (req, res) => {
+  const { pace } = req.body;
+  selections[TEMP_USER_ID] = { ...selections[TEMP_USER_ID], pace };
+  res.json({ message: '일정 스타일 저장 완료' });
+});
+
+// GPT 요청
+router.post('/schedule', async (req, res) => {
+  const data = selections[TEMP_USER_ID];
+
+  if (!data || !data.city || !data.duration || !data.companion || !data.theme || !data.pace) {
+    return res.status(400).json({ error: '선택 정보가 부족합니다.' });
+  }
+
+  const prompt = `
+너는 여행 플래너야. 아래 조건에 맞는 ${data.duration}간의 ${data.city} 여행 일정을 JSON 형식으로 작성해줘.
+
+- 여행지: ${data.city}
+- 여행 기간: ${data.duration}
+- 누구와 함께: ${data.companion}
+- 선호하는 여행 스타일: ${data.theme}
+- 일정 밀도: ${data.pace}
+
+결과는 다음 형식으로 줘:
 [
   {
     "day": 1,
@@ -29,7 +63,6 @@ const prompt = `
   }
 ]
 `;
-
 
   try {
     const response = await axios.post(
@@ -49,18 +82,14 @@ const prompt = `
 
     const reply = response.data.choices[0].message.content;
 
-    // JSON 응답 파싱 (try-catch로 감싸면 안전)
-    let parsed;
     try {
-      parsed = JSON.parse(reply);
-    } catch (err) {
-      return res.status(500).json({ error: 'GPT 응답 JSON 파싱 실패', raw: reply });
+      const parsed = JSON.parse(reply);
+      res.json(parsed);
+    } catch (e) {
+      res.status(500).json({ error: '응답 파싱 실패', raw: reply });
     }
-
-    res.json(parsed);
   } catch (error) {
-    console.error('GPT 호출 오류:', error.response?.data || error.message);
-    res.status(500).json({ error: 'GPT 요청 실패' });
+    res.status(500).json({ error: 'GPT 호출 실패', detail: error.message });
   }
 });
 

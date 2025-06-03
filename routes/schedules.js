@@ -1,7 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const controller = require('../controllers/schedulesController');
+const auth = require('../middleware/authMiddleware');
 
+router.post('/save-gpt', auth, controller.saveGPTSchedule);
 router.get('/', controller.getSchedules);
 router.get('/:id', controller.getScheduleDetail);
 router.post('/', controller.createSchedule);

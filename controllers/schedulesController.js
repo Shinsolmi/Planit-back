@@ -199,3 +199,60 @@ exports.updateScheduleWithDetails = async (req, res) => {
         connection.release();
     }
 };
+
+//gpt에게서 가져온 스케줄 저장
+exports.saveGPTSchedule = async (req, res) => {
+    const user_id = req.user.user_id;  // JWT에서 자동 추출
+    const { title, destination, startdate, enddate, details } = req.body;
+
+  if (!details) {
+    return res.status(400).json({ error: '필수 항목 누락됨' });
+  }
+
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    // 기본값 설정
+    const scheduleTitle = title || 'GPT 추천 일정';
+    const scheduleDestination = destination || details[0]?.place || '미정';
+    const today = new Date().toISOString().split('T')[0];
+    const scheduleStart = startdate || today;
+    const scheduleEnd = enddate || today;
+
+    // schedules 삽입
+    const [scheduleResult] = await connection.query(
+      `INSERT INTO schedules (user_id, title, destination, startdate, enddate)
+       VALUES (?, ?, ?, ?, ?)`,
+      [user_id, scheduleTitle, scheduleDestination, scheduleStart, scheduleEnd]
+    );
+    const scheduleId = scheduleResult.insertId;
+
+    // 2. plan_details 삽입
+    for (const dayBlock of details) {
+      const day = dayBlock.day;
+      if (!Array.isArray(dayBlock.plan)) continue;
+
+      for (const item of dayBlock.plan) {
+        const { place, time, memo } = item;
+        if (!place || !time || !day) continue;
+
+        await connection.query(
+          `INSERT INTO plan_details (schedule_id, place, time, memo, day)
+           VALUES (?, ?, ?, ?, ?)`,
+          [scheduleId, place, time, memo || '', day]
+        );
+      }
+    }
+
+
+    await connection.commit();
+    res.status(201).json({ message: 'GPT 일정 저장 성공', scheduleId });
+  } catch (err) {
+    await connection.rollback();
+    console.error(err);
+    res.status(500).json({ error: 'DB 저장 실패' });
+  } finally {
+    connection.release();
+  }
+};
