@@ -1,6 +1,6 @@
 const db = require('../db');
 
-// 1. 일정 목록 조회 (예정/지난)
+// 일정 목록 조회
 exports.getSchedules = async (req, res) => {
     const userId = req.query.user_id;
     const type = req.query.type; // "upcoming" 또는 "past"
@@ -25,29 +25,92 @@ exports.getSchedules = async (req, res) => {
     }
 };
 
-// 2. 일정 상세 조회
-exports.getScheduleDetail = async (req, res) => {
-    const scheduleId = req.params.id;
+// 로그인된 사용자의 일정 목록 조회
+exports.getMySchedules = async (req, res) => {
+  const userId = req.user.user_id;
 
-    try {
-        const [scheduleRows] = await db.query('SELECT * FROM schedules WHERE schedule_id = ?', [scheduleId]);
-        const [detailRows] = await db.query('SELECT * FROM plan_details WHERE schedule_id = ?', [scheduleId]);
+  try {
+    const [schedules] = await db.query(
+      'SELECT * FROM schedules WHERE user_id = ? ORDER BY startdate ASC',
+      [userId]
+    );
 
-        if (scheduleRows.length === 0) {
-            return res.status(404).json({ error: 'Schedule not found' });
-        }
+    for (const schedule of schedules) {
+      const [detailsRows] = await db.query(
+        'SELECT * FROM plan_details WHERE schedule_id = ? ORDER BY day ASC, time ASC',
+        [schedule.schedule_id]
+      );
 
-        res.json({
-            schedule: scheduleRows[0],
-            details: detailRows
+      const grouped = {};
+      for (const row of detailsRows) {
+        if (!grouped[row.day]) grouped[row.day] = [];
+        grouped[row.day].push({
+          place: row.place,
+          time: row.time,
+          memo: row.memo,
         });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: 'Failed to fetch schedule details' });
+      }
+
+      schedule.details = Object.entries(grouped).map(([day, plan]) => ({
+        day: parseInt(day),
+        plan,
+      }));
     }
+
+    res.json(schedules);
+  } catch (error) {
+    console.error('getMySchedules 에러:', error);
+    res.status(500).json({ error: '내 일정 조회 실패' });
+  }
 };
 
-// 3. 일정 생성
+// 일정 + 일정상세 조회 (내 일정만 가능)
+exports.getScheduleDetail = async (req, res) => {
+  const scheduleId = req.params.id;
+  const userId = req.user.user_id;
+
+  try {
+    const [scheduleRows] = await db.query(
+      'SELECT * FROM schedules WHERE schedule_id = ? AND user_id = ?',
+      [scheduleId, userId]
+    );
+    if (scheduleRows.length === 0) {
+      return res.status(403).json({ error: '접근 권한이 없습니다.' });
+    }
+
+    const [detailRows] = await db.query(
+      'SELECT * FROM plan_details WHERE schedule_id = ? ORDER BY day ASC, time ASC',
+      [scheduleId]
+    );
+
+    // day별로 plan을 그룹핑
+    const grouped = {};
+    for (const row of detailRows) {
+      if (!grouped[row.day]) grouped[row.day] = [];
+      grouped[row.day].push({
+        place: row.place,
+        time: row.time,
+        memo: row.memo,
+      });
+    }
+
+    const details = Object.entries(grouped).map(([day, plan]) => ({
+      day: parseInt(day),
+      plan,
+    }));
+
+    res.json({
+      schedule: scheduleRows[0],
+      details
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: '상세 일정 조회 실패' });
+  }
+};
+
+
+// 일정 생성
 exports.createSchedule = async (req, res) => {
     const { user_id, title, destination, startdate, enddate, details } = req.body;
 
@@ -83,7 +146,7 @@ exports.createSchedule = async (req, res) => {
     }
 };
 
-// 4. 일정 수정
+// 일정 수정
 exports.updateSchedule = async (req, res) => {
     const scheduleId = req.params.id;
     const { title, destination, startdate, enddate } = req.body;
@@ -104,7 +167,7 @@ exports.updateSchedule = async (req, res) => {
     }
 };
 
-// 5. 상세일정 수정
+// 상세일정 수정
 exports.updateScheduleDetail = async (req, res) => {
     const detailId = req.params.detail_id;
     const { place, time, memo, day } = req.body;
@@ -125,7 +188,7 @@ exports.updateScheduleDetail = async (req, res) => {
     }
 };
 
-// 6. 상세일정 삭제
+// 상세일정 삭제
 exports.deleteScheduleDetail = async (req, res) => {
     const detailId = req.params.detail_id;
 
@@ -138,31 +201,43 @@ exports.deleteScheduleDetail = async (req, res) => {
     }
 };
 
-// 7. 일정 + 상세일정 전체 삭제
+// 일정 + 상세일정 전체 삭제 (내 일정만 가능)
 exports.deleteSchedule = async (req, res) => {
     const scheduleId = req.params.id;
+    const userId = req.user.user_id;
 
     const connection = await db.getConnection();
     try {
         await connection.beginTransaction();
 
+    // 본인 일정인지 확인
+        const [check] = await connection.query(
+          'SELECT * FROM schedules WHERE schedule_id = ? AND user_id = ?',
+          [scheduleId, userId]
+        );
+        if (check.length === 0) {
+          await connection.rollback();
+          return res.status(403).json({ error: '삭제 권한이 없습니다.' });
+        }
+
         await connection.query('DELETE FROM plan_details WHERE schedule_id = ?', [scheduleId]);
         await connection.query('DELETE FROM schedules WHERE schedule_id = ?', [scheduleId]);
 
         await connection.commit();
-        res.json({ message: 'Schedule and its details deleted successfully' });
+        res.json({ message: '일정 및 상세일정 삭제 완료' });
     } catch (error) {
         await connection.rollback();
         console.error(error);
-        res.status(500).json({ error: 'Failed to delete schedule' });
+        res.status(500).json({ error: '일정 삭제 실패' });
     } finally {
         connection.release();
     }
 };
 
-// 8. 일정 + 상세일정 일괄 수정
+// 일정 + 상세일정 일괄 수정 (내 일정만 가능)
 exports.updateScheduleWithDetails = async (req, res) => {
     const scheduleId = req.params.id;
+    const userId = req.user.user_id;
     const { title, destination, startdate, enddate, details } = req.body;
 
     if (!title || !destination || !startdate || !enddate || !Array.isArray(details)) {
@@ -172,6 +247,16 @@ exports.updateScheduleWithDetails = async (req, res) => {
     const connection = await db.getConnection();
     try {
         await connection.beginTransaction();
+
+        // 본인 일정인지 확인
+        const [check] = await connection.query(
+          'SELECT * FROM schedules WHERE schedule_id = ? AND user_id = ?',
+          [scheduleId, userId]
+        );
+        if (check.length === 0) {
+          await connection.rollback();
+          return res.status(403).json({ error: '수정 권한이 없습니다.' });
+        }
 
         // 일정 수정
         await connection.query(
@@ -190,11 +275,11 @@ exports.updateScheduleWithDetails = async (req, res) => {
         }
 
         await connection.commit();
-        res.json({ message: 'Schedule and details updated successfully' });
+        res.json({ message: '일정 및 상세일정 수정 완료' });
     } catch (error) {
         await connection.rollback();
         console.error(error);
-        res.status(500).json({ error: 'Failed to update schedule and details' });
+        res.status(500).json({ error: '일정 수정 실패' });
     } finally {
         connection.release();
     }
@@ -215,7 +300,7 @@ exports.saveGPTSchedule = async (req, res) => {
 
     // 기본값 설정
     const scheduleTitle = title || 'GPT 추천 일정';
-    const scheduleDestination = destination || details[0]?.place || '미정';
+    const scheduleDestination = destination || details[0]?.place || '일본';
     const today = new Date().toISOString().split('T')[0];
     const scheduleStart = startdate || today;
     const scheduleEnd = enddate || today;

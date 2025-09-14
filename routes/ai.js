@@ -36,6 +36,12 @@ router.post('/save-pace', (req, res) => {
   res.json({ message: '일정 스타일 저장 완료' });
 });
 
+router.post('/save-dates', (req, res) => {
+  const { startdate, enddate } = req.body;
+  selections[TEMP_USER_ID] = { ...selections[TEMP_USER_ID], startdate, enddate };
+  res.json({ message: '날짜 저장 완료' });
+});
+
 // GPT 요청
 router.post('/schedule', async (req, res) => {
   const data = selections[TEMP_USER_ID];
@@ -47,6 +53,8 @@ router.post('/schedule', async (req, res) => {
   const prompt = `
 너는 여행 플래너야. 아래 조건에 맞는 ${data.duration}간의 ${data.city} 여행 일정을 JSON 형식으로 작성해줘.
 
+- 시작일: ${data.startdate}
+- 종료일: ${data.enddate}
 - 여행지: ${data.city}
 - 여행 기간: ${data.duration}
 - 누구와 함께: ${data.companion}
@@ -54,14 +62,27 @@ router.post('/schedule', async (req, res) => {
 - 일정 밀도: ${data.pace}
 
 결과는 다음 형식으로 줘:
-[
-  {
-    "day": 1,
-    "plan": [
-      { "time": "10:00", "place": "○○", "memo": "○○" }
-    ]
-  }
-]
+{
+  "startdate": "2025-06-03",
+  "enddate": "2025-06-06",
+  "details": [
+    {
+      "day": 1,
+      "plan": [
+        { "time": "10:00", "place": "장소1", "memo": "설명1" },
+        ...
+      ]
+    },
+    {
+      "day": 2,
+      "plan": [...]
+    },
+    {
+      "day": 3,
+      "plan": [...]
+    }
+  ]
+}
 `;
 
   try {
@@ -82,14 +103,23 @@ router.post('/schedule', async (req, res) => {
 
     const reply = response.data.choices[0].message.content;
 
+    let parsed;
     try {
-      const parsed = JSON.parse(reply);
-      res.json(parsed);
-    } catch (e) {
-      res.status(500).json({ error: '응답 파싱 실패', raw: reply });
+      parsed = JSON.parse(reply);
+      if (typeof parsed.details === 'string') {
+        parsed.details = JSON.parse(parsed.details);
+      }
+    } catch (err) {
+      return res.status(500).json({ error: 'GPT 응답 파싱 실패', raw: reply });
     }
+
+    parsed.startdate = data.startdate;
+    parsed.enddate = data.enddate;
+
+    res.json(parsed);
   } catch (error) {
-    res.status(500).json({ error: 'GPT 호출 실패', detail: error.message });
+    console.error(error);
+    res.status(500).json({ error: '일정 생성 중 서버 오류 발생' });
   }
 });
 

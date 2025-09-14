@@ -4,13 +4,16 @@ const controller = require('../controllers/schedulesController');
 const auth = require('../middleware/authMiddleware');
 
 router.post('/save-gpt', auth, controller.saveGPTSchedule);
-router.get('/', controller.getSchedules);
-router.get('/:id', controller.getScheduleDetail);
 router.post('/', controller.createSchedule);
+
+router.get('/me', auth, controller.getMySchedules);
+router.get('/', controller.getSchedules);
+router.get('/:id', controller.getScheduleDetail);                       //보호
+
 router.put('/:id', controller.updateSchedule);
 router.put('/details/:detail_id', controller.updateScheduleDetail);
-router.delete('/details/:detail_id', controller.deleteScheduleDetail);
-router.delete('/:id', controller.deleteSchedule);
-router.put('/:id/full', controller.updateScheduleWithDetails);
+router.put('/:id/full', controller.updateScheduleWithDetails);          //보호
+router.delete('/details/:detail_id', auth, controller.deleteScheduleDetail);
+router.delete('/:id', auth, controller.deleteSchedule);                       //보호
 
 module.exports = router;
