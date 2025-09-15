@@ -66,46 +66,80 @@ exports.getMySchedules = async (req, res) => {
 
 // 일정 + 일정상세 조회 (내 일정만 가능)
 exports.getScheduleDetail = async (req, res) => {
-  const scheduleId = req.params.id;
-  const userId = req.user.user_id;
-
   try {
-    const [scheduleRows] = await db.query(
-      'SELECT * FROM schedules WHERE schedule_id = ? AND user_id = ?',
-      [scheduleId, userId]
-    );
-    if (scheduleRows.length === 0) {
-      return res.status(403).json({ error: '접근 권한이 없습니다.' });
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({ error: 'BAD_REQUEST', message: 'invalid id' });
     }
 
-    const [detailRows] = await db.query(
-      'SELECT * FROM plan_details WHERE schedule_id = ? ORDER BY day ASC, time ASC',
-      [scheduleId]
-    );
+    const userId = req.user?.user_id;
+    if (!userId) {
+      return res.status(401).json({ error: 'UNAUTHORIZED' });
+    }
 
-    // day별로 plan을 그룹핑
-    const grouped = {};
-    for (const row of detailRows) {
-      if (!grouped[row.day]) grouped[row.day] = [];
-      grouped[row.day].push({
-        place: row.place,
-        time: row.time,
-        memo: row.memo,
+    // 1) 일정 본문
+    let schedule;
+    try {
+      const [rows] = await db.query(
+        'SELECT * FROM schedules WHERE schedule_id = ? AND user_id = ?',
+        [id, userId]
+      );
+      if (!rows || rows.length === 0) {
+        return res.status(404).json({ error: 'NOT_FOUND' });
+      }
+      schedule = rows[0];
+    } catch (e) {
+      console.error('[getScheduleDetail] schedule query failed:', e);
+      return res.status(500).json({ error: 'INTERNAL_SCHEDULE_QUERY' });
+    }
+
+    // 2) details 컬럼(JSON 문자열일 수 있음) 파싱 시도
+    let detailsFromColumn = [];
+    if (typeof schedule.details === 'string') {
+      try {
+        detailsFromColumn = JSON.parse(schedule.details);
+      } catch (e) {
+        console.warn('[getScheduleDetail] JSON parse failed (details column):', e);
+      }
+    } else if (Array.isArray(schedule.details)) {
+      detailsFromColumn = schedule.details;
+    }
+
+    // 3) 상세 테이블에서 가져오되, 실패 시 컬럼 기반으로 fallback
+    try {
+      const [detailRows] = await db.query(
+        `SELECT day, time, place, memo
+           FROM schedule_details
+          WHERE schedule_id = ?
+          ORDER BY day ASC, time ASC`,
+        [id]
+      );
+
+      // day별 그룹핑
+      const grouped = {};
+      for (const r of (detailRows || [])) {
+        if (!grouped[r.day]) grouped[r.day] = [];
+        grouped[r.day].push({ time: r.time, place: r.place, memo: r.memo });
+      }
+      const details = Object.entries(grouped)
+        .map(([day, plan]) => ({ day: parseInt(day, 10), plan }))
+        .sort((a, b) => a.day - b.day);
+
+      return res.json({
+        schedule,
+        details: details.length ? details : detailsFromColumn, // 테이블 비어있으면 컬럼 사용
+      });
+    } catch (e) {
+      // 테이블이 없거나 컬럼이 다른 경우 여기로 옴 → 컬럼 기반으로라도 응답
+      console.warn('[getScheduleDetail] detailRows query failed, fallback to column:', e && (e.code || e.message));
+      return res.json({
+        schedule,
+        details: detailsFromColumn, // 최소한 이건 내려주기
       });
     }
-
-    const details = Object.entries(grouped).map(([day, plan]) => ({
-      day: parseInt(day),
-      plan,
-    }));
-
-    res.json({
-      schedule: scheduleRows[0],
-      details
-    });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: '상세 일정 조회 실패' });
+    console.error('[getScheduleDetail] fatal error:', error);
+    return res.status(500).json({ error: 'INTERNAL' });
   }
 };
 
