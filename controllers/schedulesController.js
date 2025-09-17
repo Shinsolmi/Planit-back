@@ -67,78 +67,48 @@ exports.getMySchedules = async (req, res) => {
 // 일정 + 일정상세 조회 (내 일정만 가능)
 exports.getScheduleDetail = async (req, res) => {
   try {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id)) {
-      return res.status(400).json({ error: 'BAD_REQUEST', message: 'invalid id' });
+    const scheduleId = Number(req.params.id);
+    if (!Number.isInteger(scheduleId)) {
+      return res.status(400).json({ error: 'BAD_REQUEST' });
     }
-
     const userId = req.user?.user_id;
-    if (!userId) {
-      return res.status(401).json({ error: 'UNAUTHORIZED' });
+    if (!userId) return res.status(401).json({ error: 'UNAUTHORIZED' });
+
+    // 1) 일정 메타
+    const [scheduleRows] = await db.query(
+      'SELECT * FROM schedules WHERE schedule_id = ? AND user_id = ?',
+      [scheduleId, userId]
+    );
+    if (!scheduleRows?.length) return res.status(404).json({ error: 'NOT_FOUND' });
+    const schedule = scheduleRows[0];
+
+    // 2) 상세: plan_details 기준
+    const [detailRows] = await db.query(
+      `SELECT day, time, place, memo
+         FROM plan_details
+        WHERE schedule_id = ?
+        ORDER BY day ASC, time ASC`,
+      [scheduleId]
+    );
+
+    // day별 그룹
+    const grouped = {};
+    for (const r of detailRows || []) {
+      if (!grouped[r.day]) grouped[r.day] = [];
+      grouped[r.day].push({ time: r.time ?? '', place: r.place ?? '', memo: r.memo ?? '' });
+    }
+    let details = Object.entries(grouped)
+      .map(([day, plan]) => ({ day: parseInt(day, 10), plan }))
+      .sort((a, b) => a.day - b.day);
+
+    // 3) 폴백: schedules.details(JSON) 사용
+    if (!details.length && typeof schedule.details === 'string') {
+      try { details = JSON.parse(schedule.details); } catch (_) {}
     }
 
-    // 1) 일정 본문
-    let schedule;
-    try {
-      const [rows] = await db.query(
-        'SELECT * FROM schedules WHERE schedule_id = ? AND user_id = ?',
-        [id, userId]
-      );
-      if (!rows || rows.length === 0) {
-        return res.status(404).json({ error: 'NOT_FOUND' });
-      }
-      schedule = rows[0];
-    } catch (e) {
-      console.error('[getScheduleDetail] schedule query failed:', e);
-      return res.status(500).json({ error: 'INTERNAL_SCHEDULE_QUERY' });
-    }
-
-    // 2) details 컬럼(JSON 문자열일 수 있음) 파싱 시도
-    let detailsFromColumn = [];
-    if (typeof schedule.details === 'string') {
-      try {
-        detailsFromColumn = JSON.parse(schedule.details);
-      } catch (e) {
-        console.warn('[getScheduleDetail] JSON parse failed (details column):', e);
-      }
-    } else if (Array.isArray(schedule.details)) {
-      detailsFromColumn = schedule.details;
-    }
-
-    // 3) 상세 테이블에서 가져오되, 실패 시 컬럼 기반으로 fallback
-    try {
-      const [detailRows] = await db.query(
-        `SELECT day, time, place, memo
-           FROM schedule_details
-          WHERE schedule_id = ?
-          ORDER BY day ASC, time ASC`,
-        [id]
-      );
-
-      // day별 그룹핑
-      const grouped = {};
-      for (const r of (detailRows || [])) {
-        if (!grouped[r.day]) grouped[r.day] = [];
-        grouped[r.day].push({ time: r.time, place: r.place, memo: r.memo });
-      }
-      const details = Object.entries(grouped)
-        .map(([day, plan]) => ({ day: parseInt(day, 10), plan }))
-        .sort((a, b) => a.day - b.day);
-
-      return res.json({
-        schedule,
-        details: details.length ? details : detailsFromColumn, // 테이블 비어있으면 컬럼 사용
-      });
-    } catch (e) {
-      // 테이블이 없거나 컬럼이 다른 경우 여기로 옴 → 컬럼 기반으로라도 응답
-      console.warn('[getScheduleDetail] detailRows query failed, fallback to column:', e && (e.code || e.message));
-      return res.json({
-        schedule,
-        details: detailsFromColumn, // 최소한 이건 내려주기
-      });
-    }
-  } catch (error) {
-    console.error('[getScheduleDetail] fatal error:', error);
+    return res.json({ schedule, details });
+  } catch (e) {
+    console.error('getScheduleDetail error:', e);
     return res.status(500).json({ error: 'INTERNAL' });
   }
 };
@@ -321,57 +291,86 @@ exports.updateScheduleWithDetails = async (req, res) => {
 
 //gpt에게서 가져온 스케줄 저장
 exports.saveGPTSchedule = async (req, res) => {
-    const user_id = req.user.user_id;  // JWT에서 자동 추출
-    const { title, destination, startdate, enddate, details } = req.body;
+  const userId = req.user?.user_id;
+  if (!userId) return res.status(401).json({ error: 'UNAUTHORIZED' });
 
-  if (!details) {
-    return res.status(400).json({ error: '필수 항목 누락됨' });
-  }
+  const { title, destination, startdate, enddate, details, duration } = req.body || {};
+  const blocks = Array.isArray(details) ? details : [];
 
-  const connection = await db.getConnection();
+  // 1) 기간 계산
+  const daysFromBody = Number(duration);                  // 프론트에서 숫자(일수)로 보내면 최우선
+  const daysFromDetails = blocks.length || undefined;     // details day 수
+  const days = daysFromBody && daysFromBody > 0
+    ? daysFromBody
+    : (daysFromDetails && daysFromDetails > 0 ? daysFromDetails : 1);
+
+  // 2) 날짜 보정 (DATE 컬럼이므로 YYYY-MM-DD로 저장)
+  const toYMD = (d) => {
+    const dt = new Date(d);
+    if (isNaN(dt)) return null;
+    const pad = (n)=> String(n).padStart(2,'0');
+    return `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())}`;
+  };
+  const today = new Date();
+  const startYMD = toYMD(startdate) || toYMD(today);
+  const endDt = new Date(startYMD);
+  endDt.setDate(endDt.getDate() + (days - 1));
+  const endYMD = toYMD(endDt);
+
+  // 3) 기본값
+  const firstPlace = blocks?.[0]?.plan?.[0]?.place;
+  const scheduleTitle = title || 'GPT 추천 일정';
+  const scheduleDestination = destination || firstPlace || '일본';
+
+  const conn = await db.getConnection();
   try {
-    await connection.beginTransaction();
+    await conn.beginTransaction();
 
-    // 기본값 설정
-    const scheduleTitle = title || 'GPT 추천 일정';
-    const scheduleDestination = destination || details[0]?.place || '일본';
-    const today = new Date().toISOString().split('T')[0];
-    const scheduleStart = startdate || today;
-    const scheduleEnd = enddate || today;
-
-    // schedules 삽입
-    const [scheduleResult] = await connection.query(
+    // 4) schedules INSERT (DATE 컬럼에 YYYY-MM-DD)
+    const [r] = await conn.query(
       `INSERT INTO schedules (user_id, title, destination, startdate, enddate)
        VALUES (?, ?, ?, ?, ?)`,
-      [user_id, scheduleTitle, scheduleDestination, scheduleStart, scheduleEnd]
+      [userId, scheduleTitle, scheduleDestination, startYMD, endYMD]
     );
-    const scheduleId = scheduleResult.insertId;
+    const scheduleId = r.insertId;
 
-    // 2. plan_details 삽입
-    for (const dayBlock of details) {
-      const day = dayBlock.day;
-      if (!Array.isArray(dayBlock.plan)) continue;
+    // 5) 상세 저장 (plan_details, TIME 보정)
+    const toTime = (t) => {
+      if (!t) return null;
+      const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(String(t).trim());
+      if (!m) return null;
+      const hh = m[1].padStart(2,'0');
+      const mm = m[2].padStart(2,'0');
+      const ss = (m[3] || '00').padStart(2,'0');
+      return `${hh}:${mm}:${ss}`;
+    };
 
-      for (const item of dayBlock.plan) {
-        const { place, time, memo } = item;
-        if (!place || !time || !day) continue;
+    for (const block of blocks) {
+      const day = Number(block?.day);
+      if (!Number.isInteger(day) || !Array.isArray(block?.plan)) continue;
 
-        await connection.query(
-          `INSERT INTO plan_details (schedule_id, place, time, memo, day)
+      for (const it of block.plan) {
+        const place = (it?.place ?? '').toString().trim();
+        const timeStr = toTime(it?.time);
+        const memo = (it?.memo ?? '').toString().trim();
+        // place 필수, time은 NULL 허용(TIME 컬럼이 NULL 허용이면) — 스키마에 맞게 조정
+        if (!place) continue;
+
+        await conn.query(
+          `INSERT INTO plan_details (schedule_id, place, memo, time, day)
            VALUES (?, ?, ?, ?, ?)`,
-          [scheduleId, place, time, memo || '', day]
+          [scheduleId, place, memo || null, timeStr, day]
         );
       }
     }
 
-
-    await connection.commit();
-    res.status(201).json({ message: 'GPT 일정 저장 성공', scheduleId });
+    await conn.commit();
+    return res.status(201).json({ message: 'GPT 일정 저장 성공', scheduleId });
   } catch (err) {
-    await connection.rollback();
-    console.error(err);
-    res.status(500).json({ error: 'DB 저장 실패' });
+    await conn.rollback();
+    console.error('[saveGPTSchedule] code=', err.code, ' msg=', err.sqlMessage, ' sql=', err.sql);
+    return res.status(500).json({ error: 'DB 저장 실패' });
   } finally {
-    connection.release();
+    conn.release();
   }
 };
