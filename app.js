@@ -13,7 +13,7 @@ const searchRouter = require('./routes/search');
 
 const app = express();
 app.use(cors());  // 모든 도메인 허용
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.use('/community', communityRouter);
