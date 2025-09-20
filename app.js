@@ -43,6 +43,27 @@ app.get('/map', (req, res) => {
         </html>
     `);
 });
+app.get('/placemap', (req, res) => {
+    const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+    res.send(`
+<!DOCTYPE html>
+<html>
+<head>
+<title>Place Map</title>
+<script>
+const apiKey = "${apiKey}";
+window.onload = () => {
+const script = document.createElement('script');
+script.src = '/placemap.js';
+script.onload = () => loadGoogleMaps(apiKey);
+document.head.appendChild(script);
+};
+</script>
+</head>
+<body></body>
+</html>
+`);
+});
 
 // 예: 임시 스케줄 데이터 (DB에서 가져올 수도 있음)
 const schedules = [
