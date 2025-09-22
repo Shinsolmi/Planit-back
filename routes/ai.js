@@ -495,11 +495,13 @@ router.post('/schedule', async (req,res)=>{
 [엄격 규칙]
 - 결과는 **JSON ONLY** (설명/코드펜스 금지).
 - "title"은 **"${city} ${days}일 (핵심 키워드 1~2개) 여행"** 형태.
-- 모든 장소(place)는 Google 지도에서 검색되는 실존 POI여야 한다.
+- 한 Day에 최소 2개 이상의 장소 추천.
+- **모든 장소(place)는 Google 지도에서 검색되는 실존 POI여야 한다.**
   - "카페", "공원", "미술관", "식당", "장소", "고유명사" 같은 추상/플레이스홀더 금지.
   - 가능하면 각 항목에 "query" 필드도 제공한다(미제공 시 서버가 place+city로 보정).
 - 시간은 "HH:mm" 형식, 같은 day에서는 일정 간 최소 90분 이상 간격을 두어라, memo는 장소명 반복 금지.
 - **day는 1..${days} “정확히 ${days}개”만 존재** (초과/누락 금지).
+- 모든 설명(memo)은 반드시 한국어로 작성.
 
 [반환 JSON]
 {
@@ -640,11 +642,12 @@ router.post('/schedule-refine-diff', async (req,res)=>{
 - “_locked:true는 절대 변경 금지”
 - 빈 부분만 해당 day에 맞춰 채우기.
 - 시간은 "HH:mm" 형식, 같은 day에서는 일정 간 최소 90분 이상 간격을 두어라.
-- 신규로 채우는 모든 장소(place)는 Google 지도에서 검색되는 실존 POI여야 한다.(추상/플레이스홀더 금지).
+- 신규로 채우는 **모든 장소(place)는 Google 지도에서 검색되는 실존 POI여야 한다.**(추상/플레이스홀더 금지).
 - 가능하면 각 항목에 "query" 필드도 제공한다(미제공 시 서버가 place+city로 보정).
 - day는 1..${targetDays} 정확히 ${targetDays}개.
 - 금지 장소(forbiddenPlaces)는 사용 금지(대소문자 무시, 유사/동일 피하기).
 - 각 day는 최소 requiredPerDay[day]개 이상 신규 항목 추가(없으면 1개).
+- 모든 설명(memo)은 반드시 한국어로 작성.
 - 결과는 JSON ONLY.
 
 requiredPerDay:
