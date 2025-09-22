@@ -239,54 +239,82 @@ exports.deleteSchedule = async (req, res) => {
 };
 
 // 일정 + 상세일정 일괄 수정 (내 일정만 가능)
+// controllers/schedulesController.js
+
 exports.updateScheduleWithDetails = async (req, res) => {
-    const scheduleId = req.params.id;
-    const userId = req.user.user_id;
-    const { title, destination, startdate, enddate, details } = req.body;
+  const scheduleId = req.params.id;
 
-    if (!title || !destination || !startdate || !enddate || !Array.isArray(details)) {
-        return res.status(400).json({ error: 'Missing or invalid fields' });
+  // ✅ 인증 누락 500 방지
+  if (!req.user || !req.user.user_id) {
+    return res.status(401).json({ error: '인증 필요(토큰 누락/무효)' });
+  }
+  const userId = req.user.user_id;
+
+  const { title, destination, startdate, enddate, details } = req.body;
+
+  // ✅ 바디 유효성 검사 (서버에서 한 번 더)
+  if (!title || !destination || !startdate || !enddate || !Array.isArray(details)) {
+    return res.status(400).json({ error: 'Missing or invalid fields' });
+  }
+
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    // 본인 일정인지 확인
+    const [check] = await connection.query(
+      'SELECT * FROM schedules WHERE schedule_id = ? AND user_id = ?',
+      [scheduleId, userId]
+    );
+    if (check.length === 0) {
+      await connection.rollback();
+      return res.status(403).json({ error: '수정 권한이 없습니다.' });
     }
 
-    const connection = await db.getConnection();
-    try {
-        await connection.beginTransaction();
+    // 일정 메타 업데이트
+    await connection.query(
+      'UPDATE schedules SET title = ?, destination = ?, startdate = ?, enddate = ? WHERE schedule_id = ?',
+      [title, destination, startdate, enddate, scheduleId]
+    );
 
-        // 본인 일정인지 확인
-        const [check] = await connection.query(
-          'SELECT * FROM schedules WHERE schedule_id = ? AND user_id = ?',
-          [scheduleId, userId]
-        );
-        if (check.length === 0) {
-          await connection.rollback();
-          return res.status(403).json({ error: '수정 권한이 없습니다.' });
-        }
+    // 기존 상세 삭제
+    await connection.query('DELETE FROM plan_details WHERE schedule_id = ?', [scheduleId]);
 
-        // 일정 수정
+    // ✅ details 정규화 & 삽입 (NULL/빈값 방어)
+    const incoming = Array.isArray(details) ? details : [];
+    for (const dayBlock of incoming) {
+      const dayNum = Number(dayBlock?.day);
+      if (!Number.isFinite(dayNum)) continue; // day가 숫자여야 함
+
+      const plan = Array.isArray(dayBlock?.plan) ? dayBlock.plan : [];
+      for (const item of plan) {
+        const rawPlace = (item?.place ?? '').toString().trim();
+        const rawTime  = (item?.time  ?? '').toString().trim();
+        const memo     = (item?.memo  ?? '').toString();
+
+        // ✅ 필수값 검증: place/time 둘 다 있어야 삽입
+        if (!rawPlace || !rawTime) continue;
+
+        // ✅ TIME 형식 보정: HH:mm → HH:mm:ss
+        const time = /^\d{1,2}:\d{2}$/.test(rawTime) ? `${rawTime}:00` : rawTime;
+
+        // ✅ 최종 삽입
         await connection.query(
-            'UPDATE schedules SET title = ?, destination = ?, startdate = ?, enddate = ? WHERE schedule_id = ?',
-            [title, destination, startdate, enddate, scheduleId]
+          'INSERT INTO plan_details (schedule_id, place, time, memo, day) VALUES (?, ?, ?, ?, ?)',
+          [scheduleId, rawPlace, time, memo, dayNum]
         );
-
-        // 기존 상세일정 삭제 후 재삽입
-        await connection.query('DELETE FROM plan_details WHERE schedule_id = ?', [scheduleId]);
-
-        for (const detail of details) {
-            await connection.query(
-                'INSERT INTO plan_details (schedule_id, place, time, memo, day) VALUES (?, ?, ?, ?, ?)',
-                [scheduleId, detail.place, detail.time, detail.memo || '', detail.day]
-            );
-        }
-
-        await connection.commit();
-        res.json({ message: '일정 및 상세일정 수정 완료' });
-    } catch (error) {
-        await connection.rollback();
-        console.error(error);
-        res.status(500).json({ error: '일정 수정 실패' });
-    } finally {
-        connection.release();
+      }
     }
+
+    await connection.commit();
+    return res.json({ message: '일정 및 상세일정 수정 완료' });
+  } catch (error) {
+    await connection.rollback();
+    console.error(error);
+    return res.status(500).json({ error: '일정 수정 실패' });
+  } finally {
+    connection.release();
+  }
 };
 
 //gpt에게서 가져온 스케줄 저장
