@@ -116,6 +116,14 @@ function initMap() {
     });
     currentMap = map;
 
+    // ✏️ URL 쿼리 파라미터에서 검색어를 읽어옴
+    const urlParams = new URLSearchParams(window.location.search);
+    const query = urlParams.get('q');
+    if (query) {
+        placeInput.value = query;
+        addMarkerFromPlaceName(query, currentMap, '사용자 검색 장소');
+    }
+
     searchButton.addEventListener('click', () => {
         const placeName = placeInput.value.trim();
         if (placeName) {
