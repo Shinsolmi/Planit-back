@@ -73,6 +73,7 @@ document.head.appendChild(script);
 `);
 });
 
+
 app.get('/schedules/map', (req, res) => {
     res.json(schedules);
 });

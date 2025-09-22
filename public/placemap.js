@@ -55,6 +55,7 @@ document.body.appendChild(mapDiv);
 let currentMap;
 let markerCache = {};
 
+// 이 함수를 Flutter 앱에서 직접 호출합니다.
 async function addMarkerFromPlaceName(placeName, map, description = '') {
     if (markerCache[placeName]) {
         map.setCenter(markerCache[placeName].getPosition());
@@ -115,6 +116,13 @@ function initMap() {
         center: center
     });
     currentMap = map;
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const query = urlParams.get('q');
+    if (query) {
+        placeInput.value = query;
+        addMarkerFromPlaceName(query, currentMap, '사용자 검색 장소');
+    }
 
     searchButton.addEventListener('click', () => {
         const placeName = placeInput.value.trim();
