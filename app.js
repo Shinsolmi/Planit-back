@@ -52,11 +52,6 @@ app.get('/map', (req, res) => {
     `);
 });
 
-// 예: 임시 스케줄 데이터 (DB에서 가져올 수도 있음)
-const schedules = [
-    { title: '회의실 A', lat: 37.5665, lng: 126.9780, description: '오전 회의' },
-    { title: '카페 B', lat: 37.5700, lng: 126.9820, description: '점심 식사' }
-];
 app.get('/schedules/map', (req, res) => {
     res.json(schedules);
 });

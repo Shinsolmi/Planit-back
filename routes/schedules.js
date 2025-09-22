@@ -12,7 +12,7 @@ router.get('/:id', auth, controller.getScheduleDetail);                       //
 
 router.put('/:id', controller.updateSchedule);
 router.put('/details/:detail_id', controller.updateScheduleDetail);
-router.put('/:id/full', controller.updateScheduleWithDetails);          //보호
+router.put('/:id/full', auth, controller.updateScheduleWithDetails);          //보호
 router.delete('/details/:detail_id', auth, controller.deleteScheduleDetail);
 router.delete('/:id', auth, controller.deleteSchedule);                       //보호
 
