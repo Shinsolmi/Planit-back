@@ -117,6 +117,13 @@ function initMap() {
     });
     currentMap = map;
 
+    const urlParams = new URLSearchParams(window.location.search);
+    const query = urlParams.get('q');
+    if (query) {
+        placeInput.value = query;
+        addMarkerFromPlaceName(query, currentMap, '사용자 검색 장소');
+    }
+
     searchButton.addEventListener('click', () => {
         const placeName = placeInput.value.trim();
         if (placeName) {
