@@ -55,7 +55,16 @@ document.body.appendChild(mapDiv);
 let currentMap;
 let markerCache = {};
 
-// 이 함수를 Flutter 앱에서 직접 호출합니다.
+// ✅ Flutter 앱으로 장소 이름 전달
+function selectPlace(placeName) {
+    if (window.flutter_channel) {
+        window.flutter_channel.postMessage(placeName);
+    } else {
+        // 웹에서 테스트할 때만 사용
+        alert(`장소 선택 완료: ${placeName}`);
+    }
+}
+
 async function addMarkerFromPlaceName(placeName, map, description = '') {
     if (markerCache[placeName]) {
         map.setCenter(markerCache[placeName].getPosition());
@@ -72,7 +81,7 @@ async function addMarkerFromPlaceName(placeName, map, description = '') {
                 title: placeName
             });
             const infoWindowContent = document.createElement('div');
-            infoWindowContent.innerHTML = `<strong>${placeName}</strong><br>${description}<br><button id="delete-marker-${placeName}">삭제</button>`;
+            infoWindowContent.innerHTML = `<strong>${placeName}</strong><br>${description}<br><button id="select-place-${placeName}">선택</button>`;
             const infoWindow = new google.maps.InfoWindow({
                 content: infoWindowContent
             });
@@ -80,11 +89,8 @@ async function addMarkerFromPlaceName(placeName, map, description = '') {
                 infoWindow.open(map, marker);
             });
             infoWindow.addListener('domready', () => {
-                document.getElementById(`delete-marker-${placeName}`).addEventListener('click', () => {
-                    marker.setMap(null);
-                    delete markerCache[placeName];
-                    infoWindow.close();
-                    alert(`'${placeName}' 장소가 삭제되었습니다.`);
+                document.getElementById(`select-place-${placeName}`).addEventListener('click', () => {
+                    selectPlace(placeName);
                 });
             });
             map.setCenter(location);
