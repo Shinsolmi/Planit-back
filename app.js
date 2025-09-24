@@ -98,6 +98,28 @@ document.head.appendChild(script);
 </html>
 `);
 });
+app.get('/placemap', (req, res) => {
+    const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+    res.send(`
+<!DOCTYPE html>
+<html>
+<head>
+<title>Place Map</title>
+<script>
+const apiKey = "${apiKey}";
+window.onload = () => {
+const script = document.createElement('script');
+script.src = '/placemap.js';
+script.onload = () => loadGoogleMaps(apiKey);
+document.head.appendChild(script);
+};
+</script>
+</head>
+<body></body>
+</html>
+`);
+});
+
 
 
 app.get('/schedules/map', (req, res) => {

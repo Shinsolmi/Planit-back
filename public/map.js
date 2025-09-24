@@ -56,6 +56,7 @@ function mountUI(){
     #placePanel {
       bottom: 16px; left: 16px; width: min(360px, 80vw); max-height: 45vh; overflow: auto;
       background: rgba(255,255,255,.92); border-radius: 12px; box-shadow: 0 6px 20px rgba(0,0,0,.18); padding: 10px;
+
     }
     .place-item { display: grid; grid-template-columns: 28px 1fr; gap: 8px; align-items: start; padding: 8px; border-radius: 10px; cursor: pointer; }
     .place-item:hover { background: rgba(0,0,0,.05); }
