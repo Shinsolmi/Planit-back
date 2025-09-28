@@ -5,6 +5,7 @@ document.body.style.padding = '0';
 const style = document.createElement('style');
 style.innerHTML = `
 #control-container {
+    display: none; /* ✅ 검색창 숨김 */
     position: fixed;
     top: 0;
     left: 0;
@@ -49,7 +50,7 @@ const mapDiv = document.createElement('div');
 mapDiv.id = 'map';
 mapDiv.style.width = '100%';
 mapDiv.style.height = '100vh';
-mapDiv.style.marginTop = '60px';
+// mapDiv.style.marginTop = '60px'; /* ❌ 상단 검색바를 제거했으므로 마진도 제거 */
 document.body.appendChild(mapDiv);
 
 let currentMap;
@@ -66,6 +67,7 @@ function selectPlace(placeName) {
 }
 
 async function addMarkerFromPlaceName(placeName, map, description = '') {
+    // Cannot access 'currentMap' before initialization 오류 해결을 위해 currentMap 대신 map 사용
     if (markerCache[placeName]) {
         map.setCenter(markerCache[placeName].getPosition());
         return { lat: markerCache[placeName].getPosition().lat(), lng: markerCache[placeName].getPosition().lng(), placeName: placeName };
@@ -81,6 +83,7 @@ async function addMarkerFromPlaceName(placeName, map, description = '') {
                 title: placeName
             });
             const infoWindowContent = document.createElement('div');
+            // '삭제' 대신 '선택' 버튼 로직 유지
             infoWindowContent.innerHTML = `<strong>${placeName}</strong><br>${description}<br><button id="select-place-${placeName}">선택</button>`;
             const infoWindow = new google.maps.InfoWindow({
                 content: infoWindowContent
@@ -130,6 +133,7 @@ function initMap() {
         addMarkerFromPlaceName(query, currentMap, '사용자 검색 장소');
     }
 
+    // 웹뷰 내 검색 기능은 제거되었으나, JS 로직 유지를 위해 이벤트 핸들러는 그대로 둡니다.
     searchButton.addEventListener('click', () => {
         const placeName = placeInput.value.trim();
         if (placeName) {
