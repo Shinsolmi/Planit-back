@@ -454,6 +454,30 @@ function enforceMinGap(details, {
   return out;
 }
 
+// ----------------- 👇 새로 추가할 라우터: 진행 상태 초기화 👇 -----------------
+// Helper function to get current user ID
+const getUserId = (req) => req.user?.user_id ?? TEMP_USER_ID;
+
+// 여행 계획 진행 상태 초기화 API
+// Note: 'auth' 미들웨어는 별도 파일에 정의되어야 합니다.
+const auth = (req, res, next) => {
+    // 임시 구현: 실제 JWT 미들웨어로 대체 필요 (로그인 상태에 따라 req.user 설정 가정)
+    req.user = { user_id: TEMP_USER_ID };
+    next();
+};
+
+router.post('/clear-progress', auth, (req, res) => {
+    const userId = getUserId(req);
+    if (selections[userId]) {
+        delete selections[userId];
+        console.log(`[CLEAR][${now()}] User=${userId} progress cleared.`);
+        res.json({ message: 'Progress cleared' });
+    } else {
+        res.json({ message: 'No progress to clear' });
+    }
+});
+// ----------------- 👆 새로 추가할 라우터 👆 -----------------
+
 
 // ---------- 개별 저장 라우트 ----------
 router.post('/save-city',      (req,res)=>{ const {city}=req.body||{}; selections[TEMP_USER_ID]={...selections[TEMP_USER_ID], city}; res.json({ok:true}); });
