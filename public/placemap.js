@@ -5,7 +5,7 @@ document.body.style.padding = '0';
 const style = document.createElement('style');
 style.innerHTML = `
 #control-container {
-    display: none; /* ✅ 검색창 숨김 */
+    /* ❌ display: none;만으로는 충분하지 않았으므로, JavaScript로 요소를 제거함 */
     position: fixed;
     top: 0;
     left: 0;
@@ -50,7 +50,7 @@ const mapDiv = document.createElement('div');
 mapDiv.id = 'map';
 mapDiv.style.width = '100%';
 mapDiv.style.height = '100vh';
-// mapDiv.style.marginTop = '60px'; /* ❌ 상단 검색바를 제거했으므로 마진도 제거 */
+// mapDiv.style.marginTop = '60px'; // ❌ 마진 제거 (JavaScript로도 강제 설정할 예정)
 document.body.appendChild(mapDiv);
 
 let currentMap;
@@ -61,13 +61,11 @@ function selectPlace(placeName) {
     if (window.flutter_channel) {
         window.flutter_channel.postMessage(placeName);
     } else {
-        // 웹에서 테스트할 때만 사용
         alert(`장소 선택 완료: ${placeName}`);
     }
 }
 
 async function addMarkerFromPlaceName(placeName, map, description = '') {
-    // Cannot access 'currentMap' before initialization 오류 해결을 위해 currentMap 대신 map 사용
     if (markerCache[placeName]) {
         map.setCenter(markerCache[placeName].getPosition());
         return { lat: markerCache[placeName].getPosition().lat(), lng: markerCache[placeName].getPosition().lng(), placeName: placeName };
@@ -83,7 +81,6 @@ async function addMarkerFromPlaceName(placeName, map, description = '') {
                 title: placeName
             });
             const infoWindowContent = document.createElement('div');
-            // '삭제' 대신 '선택' 버튼 로직 유지
             infoWindowContent.innerHTML = `<strong>${placeName}</strong><br>${description}<br><button id="select-place-${placeName}">선택</button>`;
             const infoWindow = new google.maps.InfoWindow({
                 content: infoWindowContent
@@ -149,3 +146,23 @@ function initMap() {
         }
     });
 }
+
+
+// ✅ 최종 해결책: 페이지 로드 후 해당 HTML 요소를 강제로 제거
+setTimeout(() => {
+    const controlContainer = document.getElementById('control-container');
+    const mapDiv = document.getElementById('map');
+
+    // 1. 검색바 요소가 존재하면 DOM에서 제거
+    if (controlContainer) {
+        controlContainer.remove();
+        console.log("Control container removed.");
+    }
+
+    // 2. 지도를 아래로 밀던 마진을 0으로 설정 (보험성 조치)
+    if (mapDiv) {
+        mapDiv.style.marginTop = '0';
+        mapDiv.style.height = '100vh';
+        console.log("Map margin and height adjusted.");
+    }
+}, 500); // 0.5초 후 실행하여 렌더링 후 제거
