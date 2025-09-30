@@ -37,7 +37,7 @@ router.get('/summary', async (req, res) => {
 
         // 최신 팁
         const [rawTips] = await db.query(`
-            SELECT id, country, transport_type, title, content, created_at
+            SELECT id, country, transport_type, title, content
             FROM transportation
             ORDER BY id DESC
             LIMIT 5
