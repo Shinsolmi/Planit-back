@@ -26,9 +26,9 @@ app.use(cors({
 
 app.use(express.json({ limit: '1mb' }));
 
-app.use(express.static(path.join(__dirname, 'public'))); // /map.html, /map.js
+// ❌ (제거: 중복된 static 서빙)
 
-// ✅ 키 반환 라우트 추가 (정적 서빙 위/아래 아무 곳 가능)
+// ✅ 키 반환 라우트
 app.get('/config/maps-key', (req, res) => {
   const key = process.env.GOOGLE_MAPS_API_KEY || '';
   if (!key) return res.status(500).json({ error: 'GOOGLE_MAPS_API_KEY missing' });
@@ -43,6 +43,7 @@ const tipsRouter = require('./routes/tips');
 const mainRouter = require('./routes/main');
 const searchRouter = require('./routes/search');
 
+// --- API 라우터 연결 ---
 app.use('/community', communityRouter);
 app.use('/tips', tipsRouter);
 app.use('/main', mainRouter);
@@ -52,11 +53,6 @@ app.use('/schedules', schedulesRouter);
 app.use('/ai', aiRoutes);
 
 // ✅ 지도 페이지 (스케줄 지도)
-/*
-  중요:
-  - map.js가 먼저 로드되어 window.initMap가 전역에 정의된 뒤,
-  - Google Maps를 callback=initMap 으로 로딩
-*/
 app.get('/map', (req, res) => {
   const key = process.env.GOOGLE_MAPS_API_KEY || '';
   if (!key) return res.status(500).send('GOOGLE_MAPS_API_KEY missing');
@@ -78,8 +74,10 @@ app.get('/map', (req, res) => {
 });
 
 
+// ✅ 장소 검색 지도 서빙 (placemap) - 중복된 정의를 제거하고 하나만 남깁니다.
 app.get('/placemap', (req, res) => {
     const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+    if (!apiKey) return res.status(500).send('GOOGLE_MAPS_API_KEY missing');
     res.send(`
 <!DOCTYPE html>
 <html>
@@ -99,32 +97,12 @@ document.head.appendChild(script);
 </html>
 `);
 });
-app.get('/placemap', (req, res) => {
-    const apiKey = process.env.GOOGLE_MAPS_API_KEY;
-    res.send(`
-<!DOCTYPE html>
-<html>
-<head>
-<title>Place Map</title>
-<script>
-const apiKey = "${apiKey}";
-window.onload = () => {
-const script = document.createElement('script');
-script.src = '/placemap.js';
-script.onload = () => loadGoogleMaps(apiKey);
-document.head.appendChild(script);
-};
-</script>
-</head>
-<body></body>
-</html>
-`);
-});
-
 
 
 app.get('/schedules/map', (req, res) => {
-    res.json(schedules);
+    // ⚠️ 'schedules' 변수가 정의되어 있지 않아 에러가 날 수 있으므로,
+    // 실제 데이터베이스 로직으로 대체되어야 합니다.
+    res.status(501).json({ error: 'Schedules map data logic not implemented yet.' });
 });
 
 
