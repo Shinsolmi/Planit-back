@@ -1,9 +1,7 @@
-// community.js (수정된 코드 전문)
-
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
-const auth = require('../middleware/authMiddleware'); // 인증 미들웨어 추가
+const auth = require('../middleware/authMiddleware');  // 인증 미들웨어 추가
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -30,23 +28,35 @@ const upload = multer({
 
 
 // ----------------------------------------------------
-// 1. 전체 및 카테고리별 게시글 조회 (수정)
+// 1. 전체 및 카테고리별 게시글 조회 (✅ 제목 검색 필터링 추가)
 // ----------------------------------------------------
 router.get('/', async (req, res) => {
-    const { category } = req.query;
+    const { category, query: searchQuery } = req.query; // ✅ query: searchQuery로 받음
 
-    let query = 'SELECT * FROM community';
+    let sql = 'SELECT * FROM community';
     const params = [];
+    const conditions = [];
 
+    // 카테고리 필터링
     if (category && category !== '전체') {
-        query += ' WHERE category = ?';
+        conditions.push('category = ?');
         params.push(category);
     }
 
-    query += ' ORDER BY created_at DESC';
+    // ✅ 제목 검색 필터링 추가: post_title LIKE '%검색어%'
+    if (searchQuery) {
+        conditions.push('post_title LIKE ?');
+        params.push(`%${searchQuery}%`); // LIKE 검색을 위한 와일드카드 추가
+    }
+
+    if (conditions.length > 0) {
+        sql += ' WHERE ' + conditions.join(' AND ');
+    }
+
+    sql += ' ORDER BY created_at DESC';
 
     try {
-        const [rows] = await pool.query(query, params);
+        const [rows] = await pool.query(sql, params);
         res.json(rows);
     } catch (err) {
         console.error("Community GET error:", err);
@@ -86,18 +96,18 @@ router.get('/:id', async (req, res) => {
 });
 
 // ----------------------------------------------------
-// 3. 게시글 작성 (POST /community) - Multi-Part 처리 (기존 로직 유지)
+// 3. 게시글 작성 (POST /community) - Multi-Part 처리
 // ----------------------------------------------------
 router.post('/', auth, (req, res) => {
-    upload(req, res, async (err) => {
+    upload(req, res, async (err) => { // 파일 처리를 위해 upload 미들웨어 사용
         if (err) {
             console.error("Multer upload error:", err);
             return res.status(500).json({ error: '파일 업로드 중 오류가 발생했습니다.', detail: err.message });
         }
 
         const { post_title, content, category } = req.body;
-        const user_id = req.user.user_id;
-        const files = req.files || [];
+        const user_id = req.user.user_id; // JWT에서 추출된 user_id
+        const files = req.files || []; // 업로드된 파일 배열
 
         if (!post_title || !content || !category || !user_id) {
             files.forEach(file => fs.unlinkSync(file.path));
@@ -108,12 +118,14 @@ router.post('/', auth, (req, res) => {
         try {
             await connection.beginTransaction();
 
+            // 1. community 테이블에 기본 정보 삽입
             const [result] = await connection.query(
                 'INSERT INTO community (post_title, user_id, content, category) VALUES (?, ?, ?, ?)',
                 [post_title, user_id, content, category]
             );
             const postId = result.insertId;
 
+            // 2. community_media 테이블에 다중 이미지 URL 삽입
             let sortOrder = 0;
             for (const file of files) {
                 const mediaUrl = `uploads/community/${file.filename}`;
@@ -139,7 +151,7 @@ router.post('/', auth, (req, res) => {
 
 
 // ----------------------------------------------------
-// 4. 댓글 작성 및 조회 (기존 로직 유지)
+// 4. 댓글 작성 및 조회 (수정: 댓글 작성 시 created_at 추가 및 조회에 user_name 포함)
 // ----------------------------------------------------
 router.post('/:id/comments', auth, async (req, res) => {
     const { content } = req.body;
@@ -147,7 +159,7 @@ router.post('/:id/comments', auth, async (req, res) => {
 
     try {
         await pool.query(
-            'INSERT INTO comment (post_id, user_id, content) VALUES (?, ?, ?)',
+            'INSERT INTO comment (post_id, user_id, content, created_at) VALUES (?, ?, ?, NOW())',
             [req.params.id, user_id, content]
         );
         res.status(201).json({ message: 'Comment added' });
@@ -158,8 +170,8 @@ router.post('/:id/comments', auth, async (req, res) => {
 
 router.get('/:id/comments', async (req, res) => {
     try {
+        // ✅ 댓글 작성자의 user_id를 함께 조회해야 프론트에서 소유권 확인 가능
         const [rows] = await pool.query(
-            // ✅ 댓글 작성자의 user_id도 함께 조회해야 프론트에서 소유권 확인 가능
             'SELECT c.*, u.user_name FROM comment c JOIN users u ON c.user_id = u.user_id WHERE post_id = ? ORDER BY c.created_at ASC',
             [req.params.id]
         );
@@ -170,7 +182,7 @@ router.get('/:id/comments', async (req, res) => {
 });
 
 // ----------------------------------------------------
-// 5. ✅ 댓글 수정 및 삭제 라우터 (404 오류 해결)
+// 5. 댓글 수정 및 삭제 라우터 (404 오류 해결)
 // ----------------------------------------------------
 
 // 댓글 수정 (PUT /community/comments/:id)
@@ -228,7 +240,12 @@ router.delete('/comments/:id', auth, async (req, res) => {
         }
 
         // 2. 댓글 삭제
-        await pool.query('DELETE FROM comment WHERE comment_id = ?', [commentId]);
+        const [result] = await pool.query('DELETE FROM comment WHERE comment_id = ?', [commentId]);
+
+        if (result.affectedRows === 0) {
+             return res.status(404).json({ error: '댓글을 찾을 수 없습니다.' });
+        }
+
         res.status(200).json({ message: '댓글이 성공적으로 삭제되었습니다.' });
 
     } catch (err) {
