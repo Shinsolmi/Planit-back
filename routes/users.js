@@ -11,13 +11,13 @@ router.get('/me', auth, usersController.getMyPage);
 router.get('/me/saved-restaurants', auth, usersController.getSavedRestaurants);
 router.get('/me/saved-tips', auth, usersController.getSavedTips);
 
-
 // 사용자 전체 조회
 router.get('/', async (req, res) => {
     const [rows] = await db.query('SELECT * FROM users');
     res.json(rows);
 });
-
+// ✅ 교통팁 저장/취소 기능 추가
+router.post('/me/saved-tips', auth, usersController.saveTip); // POST 요청으로 저장/취소 토글
 // 사용자 등록
 router.post('/', async (req, res) => {
     const { user_name, email, password } = req.body;

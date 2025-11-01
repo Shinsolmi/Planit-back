@@ -7,10 +7,11 @@ const path = require('path');
 const fs = require('fs');
 
 // ----------------------------------------------------
-// Multer 설정 (기존 코드 유지)
+// Multer 설정: 파일 저장 위치와 이름 정의 (기존 유지)
 // ----------------------------------------------------
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
+        // 파일 저장 디렉토리 설정: [프로젝트 루트]/uploads/community
         const uploadDir = path.join(__dirname, '..', 'uploads', 'community');
         if (!fs.existsSync(uploadDir)) {
             fs.mkdirSync(uploadDir, { recursive: true });
@@ -18,6 +19,7 @@ const storage = multer.diskStorage({
         cb(null, uploadDir);
     },
     filename: (req, file, cb) => {
+        // 파일명: 필드명-타임스탬프.확장자
         cb(null, file.fieldname + '-' + Date.now() + path.extname(file.originalname));
     }
 });
@@ -28,14 +30,24 @@ const upload = multer({
 
 
 // ----------------------------------------------------
-// 1. 전체 및 카테고리별 게시글 조회 (✅ 제목 검색 필터링 추가)
+// 1. 전체 및 카테고리별 게시글 조회 (✅ user_id 필터링 추가)
 // ----------------------------------------------------
 router.get('/', async (req, res) => {
-    const { category, query: searchQuery } = req.query; // ✅ query: searchQuery로 받음
+    const { category, query: searchQuery, user_id } = req.query;
 
-    let sql = 'SELECT * FROM community';
+    let sql = `
+        SELECT
+            c.*,
+            u.user_name,
+            (SELECT COUNT(*) FROM community_like cl WHERE cl.post_id = c.post_id) AS like_count,
+            (SELECT media_url FROM community_media cm WHERE cm.post_id = c.post_id ORDER BY sort_order ASC LIMIT 1) AS media_url /* ✅ 첫 번째 이미지 URL 추가 */
+        FROM community c
+        JOIN users u ON c.user_id = u.user_id
+    `;
     const params = [];
     const conditions = [];
+
+    // ... (필터링 로직 유지)
 
     // 카테고리 필터링
     if (category && category !== '전체') {
@@ -43,17 +55,25 @@ router.get('/', async (req, res) => {
         params.push(category);
     }
 
-    // ✅ 제목 검색 필터링 추가: post_title LIKE '%검색어%'
+    // 제목 검색 필터링 추가
     if (searchQuery) {
         conditions.push('post_title LIKE ?');
-        params.push(`%${searchQuery}%`); // LIKE 검색을 위한 와일드카드 추가
+        params.push(`%${searchQuery}%`);
+    }
+
+    // 마이페이지 필터링 추가
+    if (user_id) {
+        conditions.push('c.user_id = ?');
+        params.push(user_id);
     }
 
     if (conditions.length > 0) {
         sql += ' WHERE ' + conditions.join(' AND ');
     }
 
-    sql += ' ORDER BY created_at DESC';
+    // GROUP BY 절에 추가된 모든 비집계 컬럼 명시
+    sql += ` GROUP BY c.post_id, c.post_title, c.user_id, c.content, c.category, c.created_at, u.user_name
+             ORDER BY c.created_at DESC`;
 
     try {
         const [rows] = await pool.query(sql, params);
@@ -65,28 +85,40 @@ router.get('/', async (req, res) => {
 });
 
 // ----------------------------------------------------
-// 2. 단일 게시글 조회 (미디어 목록 포함하도록 확장)
+// 2. 단일 게시글 조회 (✅ 좋아요 상태 및 수 포함하도록 확장)
 // ----------------------------------------------------
-router.get('/:id', async (req, res) => {
+router.get('/:id', auth, async (req, res) => { // ✅ 인증 미들웨어 필수 (JWT 필요)
     const postId = req.params.id;
+    const userId = req.user.user_id; // JWT에서 추출된 사용자 ID
+
     try {
-        // 기본 게시글 정보 조회
+        // 1. 게시글 정보, 좋아요 수, 사용자 좋아요 여부 조회
         const [postRows] = await pool.query(
-            'SELECT c.*, u.user_name FROM community c JOIN users u ON c.user_id = u.user_id WHERE post_id = ?',
-            [postId]
+            `SELECT
+                c.*,
+                u.user_name,
+                (SELECT COUNT(*) FROM community_like WHERE post_id = c.post_id) AS like_count,
+                (SELECT COUNT(*) FROM community_like WHERE post_id = c.post_id AND user_id = ?) AS is_liked
+            FROM community c
+            JOIN users u ON c.user_id = u.user_id
+            WHERE c.post_id = ?`,
+            [userId, postId] // is_liked 쿼리에 user_id 사용
         );
+
         if (postRows.length === 0) return res.status(404).json({ error: 'Post not found' });
 
         const post = postRows[0];
 
-        // 다중 이미지 목록 조회 (community_media 테이블 조인)
+        // 2. 다중 이미지 목록 조회 (community_media 테이블 조인)
         const [mediaRows] = await pool.query(
             'SELECT media_url, sort_order FROM community_media WHERE post_id = ? ORDER BY sort_order ASC',
             [postId]
         );
 
-        // 결과에 미디어 목록 추가
+        // 결과에 미디어 목록과 좋아요 상태/수 추가
         post.media = mediaRows;
+        post.is_liked = post.is_liked > 0; // Boolean으로 변환
+        post.like_count = Number(post.like_count); // 숫자로 변환 보장
 
         res.json(post);
     } catch (err) {
@@ -96,7 +128,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // ----------------------------------------------------
-// 3. 게시글 작성 (POST /community) - Multi-Part 처리
+// 3. 게시글 작성 (POST /community) - Multi-Part 처리 (기존 로직 유지)
 // ----------------------------------------------------
 router.post('/', auth, (req, res) => {
     upload(req, res, async (err) => { // 파일 처리를 위해 upload 미들웨어 사용
@@ -151,32 +183,46 @@ router.post('/', auth, (req, res) => {
 
 
 // ----------------------------------------------------
-// 4. 댓글 작성 및 조회 (수정: 댓글 작성 시 created_at 추가 및 조회에 user_name 포함)
+// 4. 댓글 작성 및 조회 (✅ created_at 삽입 및 게시글 존재 확인 추가)
 // ----------------------------------------------------
 router.post('/:id/comments', auth, async (req, res) => {
+    const postId = req.params.id; // 게시글 ID
     const { content } = req.body;
     const user_id = req.user.user_id;
 
+    if (!content) {
+        return res.status(400).json({ error: '댓글 내용은 필수입니다.' });
+    }
+
     try {
+        // 1. 게시글 존재 여부 확인 (외래 키 오류 방지)
+        const [postCheck] = await pool.query('SELECT post_id FROM community WHERE post_id = ?', [postId]);
+        if (postCheck.length === 0) {
+            return res.status(404).json({ error: '댓글을 달 게시글을 찾을 수 없습니다.' });
+        }
+
+        // 2. 댓글 삽입 (created_at 명시)
         await pool.query(
             'INSERT INTO comment (post_id, user_id, content, created_at) VALUES (?, ?, ?, NOW())',
-            [req.params.id, user_id, content]
+            [postId, user_id, content]
         );
         res.status(201).json({ message: 'Comment added' });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error("Comment POST error: Failed to insert comment. SQL Error:", err);
+        res.status(500).json({ error: '댓글 DB 저장 중 오류 발생' });
     }
 });
 
 router.get('/:id/comments', async (req, res) => {
     try {
-        // ✅ 댓글 작성자의 user_id를 함께 조회해야 프론트에서 소유권 확인 가능
+        // 댓글 작성자의 user_id와 user_name도 함께 조회
         const [rows] = await pool.query(
             'SELECT c.*, u.user_name FROM comment c JOIN users u ON c.user_id = u.user_id WHERE post_id = ? ORDER BY c.created_at ASC',
             [req.params.id]
         );
         res.json(rows);
     } catch (err) {
+        console.error("Comment GET error:", err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -247,7 +293,6 @@ router.delete('/comments/:id', auth, async (req, res) => {
         }
 
         res.status(200).json({ message: '댓글이 성공적으로 삭제되었습니다.' });
-
     } catch (err) {
         console.error("Comment Deletion error:", err);
         res.status(500).json({ error: err.message });
@@ -279,7 +324,7 @@ router.put('/:id', auth, (req, res) => {
             await connection.beginTransaction();
 
             // 1. 소유권 확인
-            const [check] = await connection.query('SELECT user_id FROM community WHERE post_id = ?', [postId]);
+            const [check] = await pool.query('SELECT user_id FROM community WHERE post_id = ?', [postId]);
             if (check.length === 0) { await connection.rollback(); return res.status(404).json({ error: '게시글을 찾을 수 없습니다.' }); }
             if (check[0].user_id !== userId) { await connection.rollback(); return res.status(403).json({ error: '수정 권한이 없습니다.' }); }
 

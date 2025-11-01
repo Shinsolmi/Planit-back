@@ -124,23 +124,39 @@ exports.getSavedRestaurants = async (req, res) => {
     }
 };
 
-//저장한 교통팁 조회
-exports.getSavedTips = async (req, res) => {
-    const userId = req.user.user_id;
+// ✅ 교통팁 저장 및 저장 취소 (토글)
+exports.saveTip = async (req, res) => {
+    const userId = req.user.user_id; // JWT에서 추출
+    const { tip_id } = req.body;     // 저장할 팁 ID (클라이언트에서 POST 요청으로 전달)
+
+    if (!tip_id) {
+        return res.status(400).json({ error: 'tip_id is required' });
+    }
 
     try {
+        // 1. 이미 저장되어 있는지 확인
         const [rows] = await db.query(
-            `SELECT t.id, t.country, t.transport_type, t.title, t.content, st.saved_at
-       FROM saved_tip st
-       JOIN transportation t ON st.tip_id = t.id
-       WHERE st.user_id = ?
-       ORDER BY st.saved_at DESC`,
-            [userId]
+            'SELECT * FROM saved_tip WHERE user_id = ? AND tip_id = ?',
+            [userId, tip_id]
         );
 
-        res.json(rows);
+        if (rows.length > 0) {
+            // 2. 이미 저장되어 있으면 삭제 (저장 취소)
+            await db.query(
+                'DELETE FROM saved_tip WHERE user_id = ? AND tip_id = ?',
+                [userId, tip_id]
+            );
+            return res.json({ message: 'Tip unsaved', saved: false });
+        } else {
+            // 3. 저장되어 있지 않으면 추가 (저장)
+            await db.query(
+                'INSERT INTO saved_tip (user_id, tip_id, saved_at) VALUES (?, ?, NOW())',
+                [userId, tip_id]
+            );
+            return res.json({ message: 'Tip saved', saved: true });
+        }
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: 'Failed to fetch saved tips' });
+        console.error('Save Tip Error:', error);
+        res.status(500).json({ error: 'Failed to process tip save/unsave' });
     }
 };
